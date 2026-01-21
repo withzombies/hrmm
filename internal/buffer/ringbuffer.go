@@ -1,5 +1,11 @@
 package buffer
 
+import (
+	"math"
+	"sort"
+	"time"
+)
+
 // RingBuffer stores a fixed number of float64 values in FIFO order.
 // When capacity is reached, oldest values are overwritten.
 type RingBuffer struct {
@@ -144,4 +150,70 @@ func (rb *RingBuffer) Trend() int {
 		return -1 // trending down
 	}
 	return 0 // flat
+}
+
+// StdDev returns the standard deviation of values in the buffer.
+func (rb *RingBuffer) StdDev() (float64, bool) {
+	if rb.size == 0 {
+		return 0, false
+	}
+	avg, _ := rb.Avg()
+	values := rb.Values()
+	sumSquares := 0.0
+	for _, v := range values {
+		diff := v - avg
+		sumSquares += diff * diff
+	}
+	return math.Sqrt(sumSquares / float64(len(values))), true
+}
+
+// Percentile returns the value at the given percentile (0-100).
+// Uses linear interpolation between adjacent values.
+func (rb *RingBuffer) Percentile(p float64) (float64, bool) {
+	if rb.size == 0 || p < 0 || p > 100 {
+		return 0, false
+	}
+	values := rb.Values()
+	sorted := make([]float64, len(values))
+	copy(sorted, values)
+	sort.Float64s(sorted)
+
+	idx := (p / 100) * float64(len(sorted)-1)
+	lower := int(idx)
+	upper := lower + 1
+	if upper >= len(sorted) {
+		return sorted[len(sorted)-1], true
+	}
+	weight := idx - float64(lower)
+	return sorted[lower]*(1-weight) + sorted[upper]*weight, true
+}
+
+// Median returns the median (p50) value in the buffer.
+func (rb *RingBuffer) Median() (float64, bool) {
+	return rb.Percentile(50)
+}
+
+// Rate returns the rate of change per second given the poll interval.
+func (rb *RingBuffer) Rate(interval time.Duration) (float64, bool) {
+	if rb.size < 2 {
+		return 0, false
+	}
+	values := rb.Values()
+	oldest := values[0]
+	latest := values[len(values)-1]
+	elapsed := interval.Seconds() * float64(len(values)-1)
+	if elapsed == 0 {
+		return 0, false
+	}
+	return (latest - oldest) / elapsed, true
+}
+
+// CV returns the coefficient of variation (stddev/mean).
+func (rb *RingBuffer) CV() (float64, bool) {
+	avg, ok := rb.Avg()
+	if !ok || avg == 0 {
+		return 0, false
+	}
+	stddev, _ := rb.StdDev()
+	return stddev / avg, true
 }

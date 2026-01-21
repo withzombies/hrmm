@@ -26,10 +26,11 @@ type metricsMsg struct {
 
 // metricGraph holds the data and chart for a single metric
 type metricGraph struct {
-	name   string
-	buffer *buffer.RingBuffer
-	chart  timeserieslinechart.Model
-	color  lipgloss.Color
+	name     string
+	buffer   *buffer.RingBuffer
+	chart    timeserieslinechart.Model
+	color    lipgloss.Color
+	interval time.Duration
 }
 
 // metricItem implements list.Item for MetricData
@@ -182,10 +183,11 @@ func newDashboardModel(metrics []string, fetchers []*fetcher.MetricsFetcher, int
 		chart.SetStyle(lipgloss.NewStyle().Foreground(color))
 		chart.DrawBraille()
 		m.graphs[name] = &metricGraph{
-			name:   name,
-			buffer: buffer.New(30),
-			chart:  chart,
-			color:  color,
+			name:     name,
+			buffer:   buffer.New(30),
+			chart:    chart,
+			color:    color,
+			interval: interval,
 		}
 	}
 	return m
@@ -298,18 +300,45 @@ func (m dashboardModel) renderMetricCell(name string) string {
 
 	var result string
 	if val, ok := graph.buffer.Latest(); ok {
-		// First line: metric name and current value
-		result = labelStyle.Render(fmt.Sprintf("%s: %.2f", name, val))
+		// First line: metric name and current value with trend
+		trend := graph.buffer.Trend()
+		result = labelStyle.Render(fmt.Sprintf("%s: %.2f %s", name, val, trendArrow(trend)))
 
-		// Second line: statistics and trend
+		// Second line: basic statistics
 		if min, ok := graph.buffer.Min(); ok {
 			if max, ok := graph.buffer.Max(); ok {
 				if avg, ok := graph.buffer.Avg(); ok {
-					trend := graph.buffer.Trend()
-					statsLine := fmt.Sprintf("min: %.1f | max: %.1f | avg: %.1f %s", min, max, avg, trendArrow(trend))
+					var statsLine string
+					if med, ok := graph.buffer.Median(); ok {
+						statsLine = fmt.Sprintf("min: %.1f | max: %.1f | avg: %.1f | med: %.1f", min, max, avg, med)
+					} else {
+						statsLine = fmt.Sprintf("min: %.1f | max: %.1f | avg: %.1f", min, max, avg)
+					}
 					result += "\n" + statsStyle.Render(statsLine)
 				}
 			}
+		}
+
+		// Third line: advanced statistics (σ, cv, p95, rate)
+		var advStats []string
+		if stddev, ok := graph.buffer.StdDev(); ok {
+			advStats = append(advStats, fmt.Sprintf("σ: %.2f", stddev))
+		}
+		if cv, ok := graph.buffer.CV(); ok {
+			advStats = append(advStats, fmt.Sprintf("cv: %.2f", cv))
+		}
+		if p95, ok := graph.buffer.Percentile(95); ok {
+			advStats = append(advStats, fmt.Sprintf("p95: %.1f", p95))
+		}
+		if rate, ok := graph.buffer.Rate(graph.interval); ok {
+			if rate >= 0 {
+				advStats = append(advStats, fmt.Sprintf("rate: +%.2f/s", rate))
+			} else {
+				advStats = append(advStats, fmt.Sprintf("rate: %.2f/s", rate))
+			}
+		}
+		if len(advStats) > 0 {
+			result += "\n" + statsStyle.Render(strings.Join(advStats, " | "))
 		}
 	} else {
 		result = labelStyle.Render(fmt.Sprintf("%s: (no data)", name))
