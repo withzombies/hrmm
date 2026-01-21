@@ -4,11 +4,13 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/NimbleMarkets/ntcharts/linechart/timeserieslinechart"
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/mcpherrinm/hrmm/internal/buffer"
 	"github.com/mcpherrinm/hrmm/internal/fetcher"
 	"github.com/spf13/cobra"
@@ -109,6 +111,20 @@ type dashboardModel struct {
 	lastError       error
 }
 
+// calculateGrid returns the number of columns and rows for the grid layout
+// based on terminal width and number of metrics
+func (m dashboardModel) calculateGrid() (cols, rows int) {
+	if m.width < 80 {
+		cols = 1
+	} else if m.width < 160 {
+		cols = 2
+	} else {
+		cols = 3
+	}
+	rows = (len(m.selectedMetrics) + cols - 1) / cols // ceiling division
+	return cols, rows
+}
+
 func newDashboardModel(metrics []string, fetchers []*fetcher.MetricsFetcher, interval time.Duration) dashboardModel {
 	graphs := make(map[string]*metricGraph)
 	for _, name := range metrics {
@@ -160,15 +176,17 @@ func (m dashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		// Recalculate chart sizes based on number of metrics
+		// Recalculate chart sizes based on grid layout
 		if len(m.selectedMetrics) > 0 {
-			// Header takes ~4 lines, footer ~2 lines, each metric label ~1 line
-			availableHeight := m.height - 6 - len(m.selectedMetrics)
-			chartHeight := availableHeight / len(m.selectedMetrics)
+			cols, rows := m.calculateGrid()
+			// Header takes ~4 lines, footer ~2 lines, each row needs label line
+			availableHeight := m.height - 6 - rows
+			chartHeight := availableHeight / rows
 			if chartHeight < 5 {
 				chartHeight = 5 // minimum height
 			}
-			chartWidth := m.width - 2
+			// -2 for padding between columns, -2 for overall margin
+			chartWidth := (m.width / cols) - 4
 			if chartWidth < 20 {
 				chartWidth = 20 // minimum width
 			}
@@ -206,13 +224,31 @@ func (m dashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// renderMetricCell renders a single metric's label and chart as a cell
+func (m dashboardModel) renderMetricCell(name string) string {
+	graph, ok := m.graphs[name]
+	if !ok {
+		return ""
+	}
+
+	var label string
+	if val, ok := graph.buffer.Latest(); ok {
+		label = fmt.Sprintf("%s: %.2f (points: %d)", name, val, graph.buffer.Len())
+	} else {
+		label = fmt.Sprintf("%s: (no data)", name)
+	}
+
+	return label + "\n" + graph.chart.View()
+}
+
 func (m dashboardModel) View() string {
 	s := "Dashboard\n"
 	s += fmt.Sprintf("Terminal: %dx%d | ", m.width, m.height)
 	if !m.lastFetch.IsZero() {
 		s += fmt.Sprintf("Last fetch: %s ago | ", time.Since(m.lastFetch).Round(time.Second))
 	}
-	s += fmt.Sprintf("Metrics: %d\n\n", len(m.graphs))
+	cols, _ := m.calculateGrid()
+	s += fmt.Sprintf("Metrics: %d | Grid: %d cols\n\n", len(m.graphs), cols)
 
 	if m.lastError != nil {
 		s += fmt.Sprintf("⚠ Error: %v\n\n", m.lastError)
@@ -228,22 +264,42 @@ func (m dashboardModel) View() string {
 	if len(m.selectedMetrics) == 0 {
 		s += "No metrics selected.\n"
 	} else {
-		for _, name := range m.selectedMetrics {
-			if graph, ok := m.graphs[name]; ok {
-				// Show metric name and current value
-				if val, ok := graph.buffer.Latest(); ok {
-					s += fmt.Sprintf("%s: %.2f (points: %d)\n", name, val, graph.buffer.Len())
-				} else {
-					s += fmt.Sprintf("%s: (no data)\n", name)
-				}
-				s += graph.chart.View()
-				s += "\n"
+		// Render metrics in grid layout
+		var rows []string
+		for i := 0; i < len(m.selectedMetrics); i += cols {
+			// Collect cells for this row
+			var rowCells []string
+			for j := 0; j < cols && i+j < len(m.selectedMetrics); j++ {
+				name := m.selectedMetrics[i+j]
+				cell := m.renderMetricCell(name)
+				rowCells = append(rowCells, cell)
 			}
+			// Join cells horizontally with some padding
+			row := lipgloss.JoinHorizontal(lipgloss.Top, addPadding(rowCells)...)
+			rows = append(rows, row)
 		}
+		// Join rows vertically
+		s += strings.Join(rows, "\n\n")
 	}
 
-	s += "\nPress q to quit.\n"
+	s += "\n\nPress q to quit.\n"
 	return s
+}
+
+// addPadding adds spacing between grid cells
+func addPadding(cells []string) []string {
+	if len(cells) <= 1 {
+		return cells
+	}
+	padded := make([]string, len(cells))
+	for i, cell := range cells {
+		if i < len(cells)-1 {
+			padded[i] = cell + "  " // 2 spaces between columns
+		} else {
+			padded[i] = cell
+		}
+	}
+	return padded
 }
 
 var graphCmd = &cobra.Command{

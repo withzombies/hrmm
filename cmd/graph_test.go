@@ -237,3 +237,44 @@ func containsStringHelper(s, substr string) bool {
 	}
 	return false
 }
+
+func TestDashboardModel_CalculateGrid(t *testing.T) {
+	tests := []struct {
+		name         string
+		width        int
+		numMetrics   int
+		expectedCols int
+		expectedRows int
+	}{
+		{"narrow_1_metric", 79, 1, 1, 1},
+		{"narrow_3_metrics", 79, 3, 1, 3},
+		{"medium_1_metric", 80, 1, 2, 1},
+		{"medium_3_metrics", 80, 3, 2, 2},
+		{"medium_4_metrics", 159, 4, 2, 2},
+		{"wide_1_metric", 160, 1, 3, 1},
+		{"wide_3_metrics", 160, 3, 3, 1},
+		{"wide_4_metrics", 160, 4, 3, 2},
+		{"wide_6_metrics", 200, 6, 3, 2},
+		{"wide_7_metrics", 200, 7, 3, 3},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			metrics := make([]string, tc.numMetrics)
+			for i := 0; i < tc.numMetrics; i++ {
+				metrics[i] = fmt.Sprintf("metric_%d", i)
+			}
+			model := newDashboardModel(metrics, nil, time.Second)
+			model.width = tc.width
+
+			cols, rows := model.calculateGrid()
+
+			if cols != tc.expectedCols {
+				t.Errorf("expected %d cols, got %d", tc.expectedCols, cols)
+			}
+			if rows != tc.expectedRows {
+				t.Errorf("expected %d rows, got %d", tc.expectedRows, rows)
+			}
+		})
+	}
+}
