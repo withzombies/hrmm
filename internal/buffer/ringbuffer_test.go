@@ -179,3 +179,119 @@ func TestRingBuffer_Latest(t *testing.T) {
 		t.Errorf("expected 99.0, got %f", val)
 	}
 }
+
+func TestRingBuffer_Min(t *testing.T) {
+	rb := New(30)
+
+	// Empty buffer
+	_, ok := rb.Min()
+	if ok {
+		t.Error("expected ok=false for empty buffer")
+	}
+
+	rb.Push(5.0)
+	rb.Push(2.0)
+	rb.Push(8.0)
+	rb.Push(1.0)
+	rb.Push(9.0)
+
+	min, ok := rb.Min()
+	if !ok {
+		t.Error("expected ok=true")
+	}
+	if min != 1.0 {
+		t.Errorf("expected 1.0, got %f", min)
+	}
+}
+
+func TestRingBuffer_Max(t *testing.T) {
+	rb := New(30)
+
+	// Empty buffer
+	_, ok := rb.Max()
+	if ok {
+		t.Error("expected ok=false for empty buffer")
+	}
+
+	rb.Push(5.0)
+	rb.Push(2.0)
+	rb.Push(8.0)
+	rb.Push(1.0)
+	rb.Push(9.0)
+
+	max, ok := rb.Max()
+	if !ok {
+		t.Error("expected ok=true")
+	}
+	if max != 9.0 {
+		t.Errorf("expected 9.0, got %f", max)
+	}
+}
+
+func TestRingBuffer_Avg(t *testing.T) {
+	rb := New(30)
+
+	// Empty buffer
+	_, ok := rb.Avg()
+	if ok {
+		t.Error("expected ok=false for empty buffer")
+	}
+
+	rb.Push(10.0)
+	rb.Push(20.0)
+	rb.Push(30.0)
+
+	avg, ok := rb.Avg()
+	if !ok {
+		t.Error("expected ok=true")
+	}
+	if avg != 20.0 {
+		t.Errorf("expected 20.0, got %f", avg)
+	}
+}
+
+func TestRingBuffer_Trend(t *testing.T) {
+	rb := New(30)
+
+	// Empty buffer - flat
+	if rb.Trend() != 0 {
+		t.Error("expected trend=0 for empty buffer")
+	}
+
+	// Single value - flat
+	rb.Push(5.0)
+	if rb.Trend() != 0 {
+		t.Error("expected trend=0 for single value")
+	}
+
+	// Upward trend
+	rb = New(30)
+	rb.Push(1.0)
+	rb.Push(2.0)
+	rb.Push(3.0)
+	rb.Push(4.0)
+	rb.Push(5.0)
+	if rb.Trend() != 1 {
+		t.Errorf("expected trend=1 (up), got %d", rb.Trend())
+	}
+
+	// Downward trend
+	rb = New(30)
+	rb.Push(5.0)
+	rb.Push(4.0)
+	rb.Push(3.0)
+	rb.Push(2.0)
+	rb.Push(1.0)
+	if rb.Trend() != -1 {
+		t.Errorf("expected trend=-1 (down), got %d", rb.Trend())
+	}
+
+	// Flat trend (same values)
+	rb = New(30)
+	rb.Push(5.0)
+	rb.Push(5.0)
+	rb.Push(5.0)
+	if rb.Trend() != 0 {
+		t.Errorf("expected trend=0 (flat), got %d", rb.Trend())
+	}
+}

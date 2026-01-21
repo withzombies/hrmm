@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/NimbleMarkets/ntcharts/canvas/runes"
 	"github.com/NimbleMarkets/ntcharts/linechart/timeserieslinechart"
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
@@ -172,9 +173,12 @@ func newDashboardModel(metrics []string, fetchers []*fetcher.MetricsFetcher, int
 	}
 
 	for i, name := range metrics {
-		chart := timeserieslinechart.New(chartWidth, chartHeight)
 		// Apply color from palette (cycles through colors)
 		color := chartColors[i%len(chartColors)]
+		chart := timeserieslinechart.New(chartWidth, chartHeight,
+			timeserieslinechart.WithLineStyle(runes.ArcLineStyle),
+			timeserieslinechart.WithXLabelFormatter(timeserieslinechart.HourTimeLabelFormatter()),
+		)
 		chart.SetStyle(lipgloss.NewStyle().Foreground(color))
 		chart.DrawBraille()
 		m.graphs[name] = &metricGraph{
@@ -269,6 +273,18 @@ func (m dashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// trendArrow returns a colored arrow based on the trend direction
+func trendArrow(trend int) string {
+	switch trend {
+	case 1:
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("#00FF00")).Render("↑")
+	case -1:
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("#FF0000")).Render("↓")
+	default:
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFF00")).Render("→")
+	}
+}
+
 // renderMetricCell renders a single metric's label and chart as a cell
 func (m dashboardModel) renderMetricCell(name string) string {
 	graph, ok := m.graphs[name]
@@ -276,18 +292,30 @@ func (m dashboardModel) renderMetricCell(name string) string {
 		return ""
 	}
 
-	var labelText string
-	if val, ok := graph.buffer.Latest(); ok {
-		labelText = fmt.Sprintf("%s: %.2f (points: %d)", name, val, graph.buffer.Len())
-	} else {
-		labelText = fmt.Sprintf("%s: (no data)", name)
-	}
-
 	// Apply the same color to the label as the chart
 	labelStyle := lipgloss.NewStyle().Foreground(graph.color).Bold(true)
-	label := labelStyle.Render(labelText)
+	statsStyle := lipgloss.NewStyle().Foreground(graph.color)
 
-	return label + "\n" + graph.chart.View()
+	var result string
+	if val, ok := graph.buffer.Latest(); ok {
+		// First line: metric name and current value
+		result = labelStyle.Render(fmt.Sprintf("%s: %.2f", name, val))
+
+		// Second line: statistics and trend
+		if min, ok := graph.buffer.Min(); ok {
+			if max, ok := graph.buffer.Max(); ok {
+				if avg, ok := graph.buffer.Avg(); ok {
+					trend := graph.buffer.Trend()
+					statsLine := fmt.Sprintf("min: %.1f | max: %.1f | avg: %.1f %s", min, max, avg, trendArrow(trend))
+					result += "\n" + statsStyle.Render(statsLine)
+				}
+			}
+		}
+	} else {
+		result = labelStyle.Render(fmt.Sprintf("%s: (no data)", name))
+	}
+
+	return result + "\n" + graph.chart.View()
 }
 
 func (m dashboardModel) View() string {
