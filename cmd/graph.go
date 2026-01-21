@@ -28,6 +28,7 @@ type metricGraph struct {
 	name   string
 	buffer *buffer.RingBuffer
 	chart  timeserieslinechart.Model
+	color  lipgloss.Color
 }
 
 // metricItem implements list.Item for MetricData
@@ -116,6 +117,20 @@ type dashboardModel struct {
 	lastError       error
 }
 
+// chartColors defines a palette of colors for different metrics
+var chartColors = []lipgloss.Color{
+	lipgloss.Color("#00FFFF"), // cyan
+	lipgloss.Color("#FF6B6B"), // coral red
+	lipgloss.Color("#98FB98"), // pale green
+	lipgloss.Color("#DDA0DD"), // plum
+	lipgloss.Color("#FFD700"), // gold
+	lipgloss.Color("#87CEEB"), // sky blue
+	lipgloss.Color("#FFA07A"), // light salmon
+	lipgloss.Color("#90EE90"), // light green
+	lipgloss.Color("#FF69B4"), // hot pink
+	lipgloss.Color("#20B2AA"), // light sea green
+}
+
 // calculateGrid returns the number of columns and rows for the grid layout
 // based on terminal width and number of metrics
 func (m dashboardModel) calculateGrid() (cols, rows int) {
@@ -156,13 +171,17 @@ func newDashboardModel(metrics []string, fetchers []*fetcher.MetricsFetcher, int
 		}
 	}
 
-	for _, name := range metrics {
+	for i, name := range metrics {
 		chart := timeserieslinechart.New(chartWidth, chartHeight)
+		// Apply color from palette (cycles through colors)
+		color := chartColors[i%len(chartColors)]
+		chart.SetStyle(lipgloss.NewStyle().Foreground(color))
 		chart.DrawBraille()
 		m.graphs[name] = &metricGraph{
 			name:   name,
 			buffer: buffer.New(30),
 			chart:  chart,
+			color:  color,
 		}
 	}
 	return m
@@ -257,12 +276,16 @@ func (m dashboardModel) renderMetricCell(name string) string {
 		return ""
 	}
 
-	var label string
+	var labelText string
 	if val, ok := graph.buffer.Latest(); ok {
-		label = fmt.Sprintf("%s: %.2f (points: %d)", name, val, graph.buffer.Len())
+		labelText = fmt.Sprintf("%s: %.2f (points: %d)", name, val, graph.buffer.Len())
 	} else {
-		label = fmt.Sprintf("%s: (no data)", name)
+		labelText = fmt.Sprintf("%s: (no data)", name)
 	}
+
+	// Apply the same color to the label as the chart
+	labelStyle := lipgloss.NewStyle().Foreground(graph.color).Bold(true)
+	label := labelStyle.Render(labelText)
 
 	return label + "\n" + graph.chart.View()
 }
