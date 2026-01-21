@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/NimbleMarkets/ntcharts/canvas"
 	"github.com/NimbleMarkets/ntcharts/canvas/runes"
 	"github.com/NimbleMarkets/ntcharts/linechart/timeserieslinechart"
 	"github.com/charmbracelet/bubbles/list"
@@ -133,6 +134,32 @@ var chartColors = []lipgloss.Color{
 	lipgloss.Color("#20B2AA"), // light sea green
 }
 
+// drawGridLines draws horizontal grid lines on the chart canvas
+// Only draws where there's no existing data to avoid overwriting the trend line
+func drawGridLines(chart *timeserieslinechart.Model) {
+	gridStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#444444"))
+	origin := chart.Origin()
+	graphWidth := chart.GraphWidth()
+	graphHeight := chart.GraphHeight()
+
+	// Draw horizontal grid lines at regular intervals (every 2-3 rows)
+	interval := 3
+	if graphHeight < 10 {
+		interval = 2
+	}
+
+	for y := interval; y < graphHeight; y += interval {
+		for x := 1; x < graphWidth; x++ {
+			pt := canvas.Point{X: origin.X + x, Y: origin.Y - y}
+			// Only draw grid dot if the cell is empty (no data)
+			cell := chart.Canvas.Cell(pt)
+			if cell.Rune == 0 || cell.Rune == ' ' {
+				chart.Canvas.SetRuneWithStyle(pt, '·', gridStyle)
+			}
+		}
+	}
+}
+
 // calculateGrid returns the number of columns and rows for the grid layout
 // based on terminal width and number of metrics
 func (m dashboardModel) calculateGrid() (cols, rows int) {
@@ -183,6 +210,7 @@ func newDashboardModel(metrics []string, fetchers []*fetcher.MetricsFetcher, int
 		)
 		chart.SetStyle(lipgloss.NewStyle().Foreground(color))
 		chart.DrawBraille()
+		drawGridLines(&chart)
 		m.graphs[name] = &metricGraph{
 			name:     name,
 			buffer:   buffer.New(30),
@@ -245,6 +273,7 @@ func (m dashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			for _, graph := range m.graphs {
 				graph.chart.Resize(chartWidth, chartHeight)
 				graph.chart.DrawBraille()
+				drawGridLines(&graph.chart)
 			}
 		}
 	case tickMsg:
@@ -268,6 +297,7 @@ func (m dashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						Value: value,
 					})
 					graph.chart.DrawBraille()
+					drawGridLines(&graph.chart)
 				}
 			}
 		}
