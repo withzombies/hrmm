@@ -96,9 +96,29 @@ func (m *metricSelectionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Toggle selection using original index
 			if selectedItem, ok := m.list.SelectedItem().(metricItem); ok {
 				selectedItem.selected = !selectedItem.selected
-				// Update in both allItems (source of truth) and list
+				// Update in allItems (source of truth)
 				m.allItems[selectedItem.originalIdx] = selectedItem
-				m.list.SetItem(selectedItem.originalIdx, selectedItem)
+
+				// Rebuild list items to ensure UI reflects changes
+				// When filtered, the list maintains copies of items, so SetItem
+				// on the underlying array doesn't update the filtered view
+				filterValue := m.list.FilterValue()
+				filterState := m.list.FilterState()
+				cursorIdx := m.list.Index()
+
+				items := make([]list.Item, len(m.allItems))
+				for i, item := range m.allItems {
+					items[i] = item
+				}
+				m.list.SetItems(items)
+
+				// Restore filter state if filtering was active
+				if filterState == list.FilterApplied && filterValue != "" {
+					m.list.SetFilterText(filterValue)
+					m.list.SetFilterState(list.FilterApplied)
+					// Restore cursor position within filtered results
+					m.list.Select(cursorIdx)
+				}
 			}
 		case "enter":
 			// Proceed to graph view with selected metrics
