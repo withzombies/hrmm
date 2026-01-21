@@ -63,7 +63,7 @@ func (m *metricSelectionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 			if len(selectedMetrics) > 0 {
-				return initialGraphModel(selectedMetrics), nil
+				return newDashboardModel(selectedMetrics), nil
 			}
 		}
 	}
@@ -77,40 +77,51 @@ func (m *metricSelectionModel) View() string {
 	return "\n" + m.list.View()
 }
 
-// graphModel represents the graph display screen (placeholder)
-type graphModel struct {
+// dashboardModel represents the dashboard view with live-updating charts
+type dashboardModel struct {
 	selectedMetrics []string
+	width           int
+	height          int
 }
 
-func initialGraphModel(selectedMetrics []string) graphModel {
-	return graphModel{
-		selectedMetrics: selectedMetrics,
+func newDashboardModel(metrics []string) dashboardModel {
+	return dashboardModel{
+		selectedMetrics: metrics,
 	}
 }
 
-func (m graphModel) Init() tea.Cmd {
-	return nil
+func (m dashboardModel) Init() tea.Cmd {
+	return nil // Polling will be added in a future task
 }
 
-func (m graphModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m dashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
-		case "ctrl+c", "q", "esc":
+		case "ctrl+c", "q":
 			return m, tea.Quit
 		}
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
 	}
 	return m, nil
 }
 
-func (m graphModel) View() string {
-	s := "Graph View (TODO: Implement actual graphing)\n\n"
-	s += "Selected metrics for graphing:\n"
-	for _, metric := range m.selectedMetrics {
-		s += fmt.Sprintf("- %s\n", metric)
+func (m dashboardModel) View() string {
+	s := "Dashboard\n\n"
+	s += fmt.Sprintf("Terminal: %dx%d\n\n", m.width, m.height)
+
+	if len(m.selectedMetrics) == 0 {
+		s += "No metrics selected.\n"
+	} else {
+		s += "Selected metrics:\n"
+		for _, name := range m.selectedMetrics {
+			s += fmt.Sprintf("  • %s\n", name)
+		}
 	}
+
 	s += "\nPress q to quit.\n"
-	s += "\nTODO: Implement actual graph display here.\n"
 	return s
 }
 
