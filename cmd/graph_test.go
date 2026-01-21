@@ -13,10 +13,7 @@ import (
 )
 
 func TestDashboardModel_TickMsgTriggersFetch(t *testing.T) {
-	model := dashboardModel{
-		selectedMetrics: []string{"test_metric"},
-		interval:        time.Second,
-	}
+	model := newDashboardModel([]string{"test_metric"}, nil, time.Second)
 
 	msg := tickMsg(time.Now())
 	_, cmd := model.Update(msg)
@@ -27,10 +24,8 @@ func TestDashboardModel_TickMsgTriggersFetch(t *testing.T) {
 }
 
 func TestDashboardModel_MetricsMsgUpdatesState(t *testing.T) {
-	model := dashboardModel{
-		selectedMetrics: []string{"test_metric"},
-		interval:        time.Second,
-	}
+	// Create model with initialized graphs
+	model := newDashboardModel([]string{"test_metric"}, nil, time.Second)
 
 	testData := []fetcher.MetricData{
 		{Name: "test_metric", Value: fetcher.NullableFloat64(42.0)},
@@ -41,8 +36,13 @@ func TestDashboardModel_MetricsMsgUpdatesState(t *testing.T) {
 
 	dm := result.(dashboardModel)
 
-	if len(dm.metricsData) != 1 {
-		t.Errorf("expected 1 metric, got %d", len(dm.metricsData))
+	// Check that the graph buffer received the data
+	if graph, ok := dm.graphs["test_metric"]; ok {
+		if graph.buffer.Len() != 1 {
+			t.Errorf("expected 1 point in buffer, got %d", graph.buffer.Len())
+		}
+	} else {
+		t.Error("expected graph for test_metric")
 	}
 
 	if dm.lastFetch.IsZero() {
@@ -60,10 +60,7 @@ func TestDashboardModel_MetricsMsgUpdatesState(t *testing.T) {
 }
 
 func TestDashboardModel_MetricsMsgError(t *testing.T) {
-	model := dashboardModel{
-		selectedMetrics: []string{"test_metric"},
-		interval:        time.Second,
-	}
+	model := newDashboardModel([]string{"test_metric"}, nil, time.Second)
 
 	testErr := errors.New("connection refused")
 	msg := metricsMsg{data: nil, err: testErr}
@@ -87,11 +84,8 @@ func TestDashboardModel_MetricsMsgError(t *testing.T) {
 
 func TestDashboardModel_MetricsMsgClearsError(t *testing.T) {
 	// Start with an existing error
-	model := dashboardModel{
-		selectedMetrics: []string{"test_metric"},
-		interval:        time.Second,
-		lastError:       errors.New("previous error"),
-	}
+	model := newDashboardModel([]string{"test_metric"}, nil, time.Second)
+	model.lastError = errors.New("previous error")
 
 	// Send successful metrics
 	testData := []fetcher.MetricData{
@@ -108,10 +102,7 @@ func TestDashboardModel_MetricsMsgClearsError(t *testing.T) {
 }
 
 func TestDashboardModel_InitReturnsBatch(t *testing.T) {
-	model := dashboardModel{
-		selectedMetrics: []string{"test_metric"},
-		interval:        time.Second,
-	}
+	model := newDashboardModel([]string{"test_metric"}, nil, time.Second)
 
 	cmd := model.Init()
 
@@ -124,10 +115,7 @@ func TestDashboardModel_InitReturnsBatch(t *testing.T) {
 }
 
 func TestDashboardModel_QuitOnCtrlC(t *testing.T) {
-	model := dashboardModel{
-		selectedMetrics: []string{"test_metric"},
-		interval:        time.Second,
-	}
+	model := newDashboardModel([]string{"test_metric"}, nil, time.Second)
 
 	msg := tea.KeyMsg{Type: tea.KeyCtrlC}
 	_, cmd := model.Update(msg)
@@ -139,10 +127,7 @@ func TestDashboardModel_QuitOnCtrlC(t *testing.T) {
 }
 
 func TestDashboardModel_QuitOnQ(t *testing.T) {
-	model := dashboardModel{
-		selectedMetrics: []string{"test_metric"},
-		interval:        time.Second,
-	}
+	model := newDashboardModel([]string{"test_metric"}, nil, time.Second)
 
 	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}}
 	_, cmd := model.Update(msg)
@@ -153,10 +138,7 @@ func TestDashboardModel_QuitOnQ(t *testing.T) {
 }
 
 func TestDashboardModel_WindowSizeUpdates(t *testing.T) {
-	model := dashboardModel{
-		selectedMetrics: []string{"test_metric"},
-		interval:        time.Second,
-	}
+	model := newDashboardModel([]string{"test_metric"}, nil, time.Second)
 
 	msg := tea.WindowSizeMsg{Width: 120, Height: 40}
 	result, _ := model.Update(msg)
@@ -206,13 +188,10 @@ test_counter %d
 }
 
 func TestDashboardModel_ViewShowsError(t *testing.T) {
-	model := dashboardModel{
-		selectedMetrics: []string{"test_metric"},
-		interval:        time.Second,
-		width:           80,
-		height:          24,
-		lastError:       errors.New("connection timeout"),
-	}
+	model := newDashboardModel([]string{"test_metric"}, nil, time.Second)
+	model.width = 80
+	model.height = 24
+	model.lastError = errors.New("connection timeout")
 
 	view := model.View()
 
@@ -227,16 +206,14 @@ func TestDashboardModel_ViewShowsError(t *testing.T) {
 }
 
 func TestDashboardModel_ViewShowsMetrics(t *testing.T) {
-	model := dashboardModel{
-		selectedMetrics: []string{"cpu_usage", "memory_bytes"},
-		interval:        time.Second,
-		width:           80,
-		height:          24,
-		metricsData: []fetcher.MetricData{
-			{Name: "cpu_usage", Value: fetcher.NullableFloat64(42.0)},
-			{Name: "memory_bytes", Value: fetcher.NullableFloat64(1024)},
-		},
-	}
+	// Create model with initialized graphs
+	model := newDashboardModel([]string{"cpu_usage", "memory_bytes"}, nil, time.Second)
+	model.width = 80
+	model.height = 24
+
+	// Push some data to the graphs
+	model.graphs["cpu_usage"].buffer.Push(42.0)
+	model.graphs["memory_bytes"].buffer.Push(1024)
 
 	view := model.View()
 

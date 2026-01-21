@@ -2,11 +2,14 @@ package cmd
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"time"
 
+	"github.com/NimbleMarkets/ntcharts/linechart/timeserieslinechart"
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/mcpherrinm/hrmm/internal/buffer"
 	"github.com/mcpherrinm/hrmm/internal/fetcher"
 	"github.com/spf13/cobra"
 )
@@ -16,6 +19,13 @@ type tickMsg time.Time
 type metricsMsg struct {
 	data []fetcher.MetricData
 	err  error
+}
+
+// metricGraph holds the data and chart for a single metric
+type metricGraph struct {
+	name   string
+	buffer *buffer.RingBuffer
+	chart  timeserieslinechart.Model
 }
 
 // metricItem implements list.Item for MetricData
@@ -90,18 +100,27 @@ func (m *metricSelectionModel) View() string {
 // dashboardModel represents the dashboard view with live-updating charts
 type dashboardModel struct {
 	selectedMetrics []string
+	graphs          map[string]*metricGraph
 	width           int
 	height          int
 	fetchers        []*fetcher.MetricsFetcher
 	interval        time.Duration
 	lastFetch       time.Time
 	lastError       error
-	metricsData     []fetcher.MetricData
 }
 
 func newDashboardModel(metrics []string, fetchers []*fetcher.MetricsFetcher, interval time.Duration) dashboardModel {
+	graphs := make(map[string]*metricGraph)
+	for _, name := range metrics {
+		graphs[name] = &metricGraph{
+			name:   name,
+			buffer: buffer.New(30),
+			chart:  timeserieslinechart.New(40, 10), // default size, will be resized
+		}
+	}
 	return dashboardModel{
 		selectedMetrics: metrics,
+		graphs:          graphs,
 		fetchers:        fetchers,
 		interval:        interval,
 	}
@@ -141,6 +160,23 @@ func (m dashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		// Recalculate chart sizes based on number of metrics
+		if len(m.selectedMetrics) > 0 {
+			// Header takes ~4 lines, footer ~2 lines, each metric label ~1 line
+			availableHeight := m.height - 6 - len(m.selectedMetrics)
+			chartHeight := availableHeight / len(m.selectedMetrics)
+			if chartHeight < 5 {
+				chartHeight = 5 // minimum height
+			}
+			chartWidth := m.width - 2
+			if chartWidth < 20 {
+				chartWidth = 20 // minimum width
+			}
+			for _, graph := range m.graphs {
+				graph.chart.Resize(chartWidth, chartHeight)
+				graph.chart.DrawBraille()
+			}
+		}
 	case tickMsg:
 		return m, m.fetchMetrics()
 	case metricsMsg:
@@ -149,7 +185,21 @@ func (m dashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.lastError = msg.err
 		} else {
 			m.lastError = nil
-			m.metricsData = msg.data
+			for _, metric := range msg.data {
+				if graph, ok := m.graphs[metric.Name]; ok {
+					value := float64(metric.Value)
+					// Skip NaN/Inf values
+					if math.IsNaN(value) || math.IsInf(value, 0) {
+						continue
+					}
+					graph.buffer.Push(value)
+					graph.chart.Push(timeserieslinechart.TimePoint{
+						Time:  m.lastFetch,
+						Value: value,
+					})
+					graph.chart.DrawBraille()
+				}
+			}
 		}
 		return m, m.pollTick()
 	}
@@ -162,18 +212,33 @@ func (m dashboardModel) View() string {
 	if !m.lastFetch.IsZero() {
 		s += fmt.Sprintf("Last fetch: %s ago | ", time.Since(m.lastFetch).Round(time.Second))
 	}
-	s += fmt.Sprintf("Metrics: %d\n\n", len(m.metricsData))
+	s += fmt.Sprintf("Metrics: %d\n\n", len(m.graphs))
 
 	if m.lastError != nil {
 		s += fmt.Sprintf("⚠ Error: %v\n\n", m.lastError)
 	}
 
+	// Handle case where we haven't received WindowSizeMsg yet
+	if m.width == 0 || m.height == 0 {
+		s += "Waiting for terminal size...\n"
+		s += "\nPress q to quit.\n"
+		return s
+	}
+
 	if len(m.selectedMetrics) == 0 {
 		s += "No metrics selected.\n"
 	} else {
-		s += "Selected metrics:\n"
 		for _, name := range m.selectedMetrics {
-			s += fmt.Sprintf("  • %s\n", name)
+			if graph, ok := m.graphs[name]; ok {
+				// Show metric name and current value
+				if val, ok := graph.buffer.Latest(); ok {
+					s += fmt.Sprintf("%s: %.2f (points: %d)\n", name, val, graph.buffer.Len())
+				} else {
+					s += fmt.Sprintf("%s: (no data)\n", name)
+				}
+				s += graph.chart.View()
+				s += "\n"
+			}
 		}
 	}
 
