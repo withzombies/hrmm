@@ -54,6 +54,8 @@ type metricSelectionModel struct {
 	err      error
 	fetchers []*fetcher.MetricsFetcher
 	interval time.Duration
+	width    int
+	height   int
 }
 
 func (m *metricSelectionModel) Init() tea.Cmd {
@@ -63,7 +65,9 @@ func (m *metricSelectionModel) Init() tea.Cmd {
 func (m *metricSelectionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		// Update list dimensions to fit terminal size
+		// Store size for passing to dashboard, and update list dimensions
+		m.width = msg.Width
+		m.height = msg.Height
 		m.list.SetWidth(msg.Width)
 		m.list.SetHeight(msg.Height - 2) // Leave space for title and padding
 	case tea.KeyMsg:
@@ -85,7 +89,8 @@ func (m *metricSelectionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 			if len(selectedMetrics) > 0 {
-				return newDashboardModel(selectedMetrics, m.fetchers, m.interval), nil
+				dm := newDashboardModel(selectedMetrics, m.fetchers, m.interval, m.width, m.height)
+				return dm, dm.Init()
 			}
 		}
 	}
@@ -125,21 +130,42 @@ func (m dashboardModel) calculateGrid() (cols, rows int) {
 	return cols, rows
 }
 
-func newDashboardModel(metrics []string, fetchers []*fetcher.MetricsFetcher, interval time.Duration) dashboardModel {
-	graphs := make(map[string]*metricGraph)
-	for _, name := range metrics {
-		graphs[name] = &metricGraph{
-			name:   name,
-			buffer: buffer.New(30),
-			chart:  timeserieslinechart.New(40, 10), // default size, will be resized
-		}
-	}
-	return dashboardModel{
+func newDashboardModel(metrics []string, fetchers []*fetcher.MetricsFetcher, interval time.Duration, width, height int) dashboardModel {
+	m := dashboardModel{
 		selectedMetrics: metrics,
-		graphs:          graphs,
+		graphs:          make(map[string]*metricGraph),
 		fetchers:        fetchers,
 		interval:        interval,
+		width:           width,
+		height:          height,
 	}
+
+	// Calculate chart dimensions based on grid
+	cols, rows := m.calculateGrid()
+	chartWidth := 40  // default
+	chartHeight := 10 // default
+	if width > 0 && height > 0 && len(metrics) > 0 {
+		availableHeight := height - 6 - rows
+		chartHeight = availableHeight / rows
+		if chartHeight < 5 {
+			chartHeight = 5
+		}
+		chartWidth = (width / cols) - 4
+		if chartWidth < 20 {
+			chartWidth = 20
+		}
+	}
+
+	for _, name := range metrics {
+		chart := timeserieslinechart.New(chartWidth, chartHeight)
+		chart.DrawBraille()
+		m.graphs[name] = &metricGraph{
+			name:   name,
+			buffer: buffer.New(30),
+			chart:  chart,
+		}
+	}
+	return m
 }
 
 func (m dashboardModel) pollTick() tea.Cmd {

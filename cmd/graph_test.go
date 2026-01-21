@@ -13,7 +13,7 @@ import (
 )
 
 func TestDashboardModel_TickMsgTriggersFetch(t *testing.T) {
-	model := newDashboardModel([]string{"test_metric"}, nil, time.Second)
+	model := newDashboardModel([]string{"test_metric"}, nil, time.Second, 80, 24)
 
 	msg := tickMsg(time.Now())
 	_, cmd := model.Update(msg)
@@ -25,7 +25,7 @@ func TestDashboardModel_TickMsgTriggersFetch(t *testing.T) {
 
 func TestDashboardModel_MetricsMsgUpdatesState(t *testing.T) {
 	// Create model with initialized graphs
-	model := newDashboardModel([]string{"test_metric"}, nil, time.Second)
+	model := newDashboardModel([]string{"test_metric"}, nil, time.Second, 80, 24)
 
 	testData := []fetcher.MetricData{
 		{Name: "test_metric", Value: fetcher.NullableFloat64(42.0)},
@@ -60,7 +60,7 @@ func TestDashboardModel_MetricsMsgUpdatesState(t *testing.T) {
 }
 
 func TestDashboardModel_MetricsMsgError(t *testing.T) {
-	model := newDashboardModel([]string{"test_metric"}, nil, time.Second)
+	model := newDashboardModel([]string{"test_metric"}, nil, time.Second, 80, 24)
 
 	testErr := errors.New("connection refused")
 	msg := metricsMsg{data: nil, err: testErr}
@@ -84,7 +84,7 @@ func TestDashboardModel_MetricsMsgError(t *testing.T) {
 
 func TestDashboardModel_MetricsMsgClearsError(t *testing.T) {
 	// Start with an existing error
-	model := newDashboardModel([]string{"test_metric"}, nil, time.Second)
+	model := newDashboardModel([]string{"test_metric"}, nil, time.Second, 80, 24)
 	model.lastError = errors.New("previous error")
 
 	// Send successful metrics
@@ -102,7 +102,7 @@ func TestDashboardModel_MetricsMsgClearsError(t *testing.T) {
 }
 
 func TestDashboardModel_InitReturnsBatch(t *testing.T) {
-	model := newDashboardModel([]string{"test_metric"}, nil, time.Second)
+	model := newDashboardModel([]string{"test_metric"}, nil, time.Second, 80, 24)
 
 	cmd := model.Init()
 
@@ -115,7 +115,7 @@ func TestDashboardModel_InitReturnsBatch(t *testing.T) {
 }
 
 func TestDashboardModel_QuitOnCtrlC(t *testing.T) {
-	model := newDashboardModel([]string{"test_metric"}, nil, time.Second)
+	model := newDashboardModel([]string{"test_metric"}, nil, time.Second, 80, 24)
 
 	msg := tea.KeyMsg{Type: tea.KeyCtrlC}
 	_, cmd := model.Update(msg)
@@ -127,7 +127,7 @@ func TestDashboardModel_QuitOnCtrlC(t *testing.T) {
 }
 
 func TestDashboardModel_QuitOnQ(t *testing.T) {
-	model := newDashboardModel([]string{"test_metric"}, nil, time.Second)
+	model := newDashboardModel([]string{"test_metric"}, nil, time.Second, 80, 24)
 
 	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}}
 	_, cmd := model.Update(msg)
@@ -138,7 +138,7 @@ func TestDashboardModel_QuitOnQ(t *testing.T) {
 }
 
 func TestDashboardModel_WindowSizeUpdates(t *testing.T) {
-	model := newDashboardModel([]string{"test_metric"}, nil, time.Second)
+	model := newDashboardModel([]string{"test_metric"}, nil, time.Second, 80, 24)
 
 	msg := tea.WindowSizeMsg{Width: 120, Height: 40}
 	result, _ := model.Update(msg)
@@ -188,7 +188,7 @@ test_counter %d
 }
 
 func TestDashboardModel_ViewShowsError(t *testing.T) {
-	model := newDashboardModel([]string{"test_metric"}, nil, time.Second)
+	model := newDashboardModel([]string{"test_metric"}, nil, time.Second, 80, 24)
 	model.width = 80
 	model.height = 24
 	model.lastError = errors.New("connection timeout")
@@ -207,7 +207,7 @@ func TestDashboardModel_ViewShowsError(t *testing.T) {
 
 func TestDashboardModel_ViewShowsMetrics(t *testing.T) {
 	// Create model with initialized graphs
-	model := newDashboardModel([]string{"cpu_usage", "memory_bytes"}, nil, time.Second)
+	model := newDashboardModel([]string{"cpu_usage", "memory_bytes"}, nil, time.Second, 80, 24)
 	model.width = 80
 	model.height = 24
 
@@ -264,8 +264,7 @@ func TestDashboardModel_CalculateGrid(t *testing.T) {
 			for i := 0; i < tc.numMetrics; i++ {
 				metrics[i] = fmt.Sprintf("metric_%d", i)
 			}
-			model := newDashboardModel(metrics, nil, time.Second)
-			model.width = tc.width
+			model := newDashboardModel(metrics, nil, time.Second, tc.width, 40)
 
 			cols, rows := model.calculateGrid()
 
