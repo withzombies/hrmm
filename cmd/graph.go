@@ -162,7 +162,8 @@ func newDashboardModel(metrics []string, fetchers []*fetcher.MetricsFetcher, int
 	chartWidth := 40  // default
 	chartHeight := 10 // default
 	if width > 0 && height > 0 && len(metrics) > 0 {
-		availableHeight := height - 6 - rows
+		// Header ~4 lines, footer ~2 lines, each row needs 3 stat lines + 1 blank between rows
+		availableHeight := height - 6 - (rows * 4)
 		chartHeight = availableHeight / rows
 		if chartHeight < 5 {
 			chartHeight = 5
@@ -230,8 +231,8 @@ func (m dashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Recalculate chart sizes based on grid layout
 		if len(m.selectedMetrics) > 0 {
 			cols, rows := m.calculateGrid()
-			// Header takes ~4 lines, footer ~2 lines, each row needs label line
-			availableHeight := m.height - 6 - rows
+			// Header ~4 lines, footer ~2 lines, each row needs 3 stat lines + 1 blank between rows
+			availableHeight := m.height - 6 - (rows * 4)
 			chartHeight := availableHeight / rows
 			if chartHeight < 5 {
 				chartHeight = 5 // minimum height
