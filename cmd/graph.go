@@ -20,6 +20,7 @@ import (
 
 // Message types for dashboard polling
 type tickMsg time.Time
+type uiTickMsg time.Time // For updating the UI (e.g., "last fetch: Xs ago")
 type metricsMsg struct {
 	data []fetcher.MetricData
 	err  error
@@ -244,6 +245,12 @@ func (m dashboardModel) pollTick() tea.Cmd {
 	})
 }
 
+func (m dashboardModel) uiTick() tea.Cmd {
+	return tea.Tick(time.Second, func(t time.Time) tea.Msg {
+		return uiTickMsg(t)
+	})
+}
+
 func (m dashboardModel) fetchMetrics() tea.Cmd {
 	return func() tea.Msg {
 		var allData []fetcher.MetricData
@@ -259,7 +266,7 @@ func (m dashboardModel) fetchMetrics() tea.Cmd {
 }
 
 func (m dashboardModel) Init() tea.Cmd {
-	return tea.Batch(m.pollTick(), m.fetchMetrics())
+	return tea.Batch(m.pollTick(), m.fetchMetrics(), m.uiTick())
 }
 
 func (m dashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -294,6 +301,9 @@ func (m dashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case tickMsg:
 		return m, m.fetchMetrics()
+	case uiTickMsg:
+		// Just re-render the UI (updates "last fetch: Xs ago" display)
+		return m, m.uiTick()
 	case metricsMsg:
 		m.lastFetch = time.Now()
 		if msg.err != nil {
